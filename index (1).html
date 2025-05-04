@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>A Man: Identity Chase</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h2>A Man: Identity Chase</h2>
+        <div id="clues">Clues Found: 0</div>
+        <div id="detection">Detection: Low</div>
+    </div>
+    <div id="instructions">
+        <p>WASD: Move | Mouse: Look Around | E: Interact</p>
+        <p>Find clues to uncover the truth about your identity</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script>
+        // Game variables
+        let cluesFound = 0;
+        let detectionLevel = 0;
+        let player;
+        let controls;
+        let interactableObjects = [];
+        let clueObjects = [];
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.fog = new THREE.Fog(0x87CEEB, 10, 50);
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.y = 1.6; // Approximate eye level
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(1, 10, 1);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        scene.add(directionalLight);
+
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3a5f0b,
+            roughness: 0.8,
+            metalness: 0.2
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Player
+        const playerGeometry = new THREE.CapsuleGeometry(0.3, 1, 4, 8);
+        const playerMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3333ff,
+            roughness: 0.7
+        });
+        player = new THREE.Mesh(playerGeometry, playerMaterial);
+        player.castShadow = true;
+        player.position.y = 1;
+        scene.add(player);
+
+        // Controls
+        controls = new THREE.PointerLockControls(camera, document.body);
+        scene.add(controls.getObject());
+
+        // Create city buildings
+        function createBuilding(x, z, width, depth, height, color) {
+            const geometry = new THREE.BoxGeometry(width, height, depth);
+            const material = new THREE.MeshStandardMaterial({ color });
+            const building = new THREE.Mesh(geometry, material);
+            building.position.set(x, height/2, z);
+            building.castShadow = true;
+            building.receiveShadow = true;
+            
+            // Add to interactable objects if it's a special building
+            if (color === 0xaaaaaa) { // Police station
+                building.userData = { type: 'police', interactive: true };
+                interactableObjects.push(building);
+            } else if (color === 0xff9999) { // Hospital
+                building.userData = { type: 'hospital', interactive: true };
+                interactableObjects.push(building);
+            }
+            
+            scene.add(building);
+            return building;
+        }
+
+        // Create clue items
+        function createClue(x, z, type) {
+            const geometry = new THREE.BoxGeometry(0.3, 0.1, 0.3);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0xffdd00,
+                emissive: 0xffaa00,
+                emissiveIntensity: 0.5
+            });
+            const clue = new THREE.Mesh(geometry, material);
+            clue.position.set(x, 0.5, z);
+            clue.userData = { type: 'clue', clueType: type };
+            clueObjects.push(clue);
+            scene.add(clue);
+            return clue;
+        }
+
+        // Create simple city
+        createBuilding(-15, -15, 10, 8, 5, 0xaaaaaa); // Police station
+        createBuilding(20, 10, 12, 10, 6, 0xff9999); // Hospital
+        createBuilding(-10, 20, 8, 8, 4, 0xdddddd); // Office
+        createBuilding(15, -10, 7, 7, 3, 0xccaa99); // Apartment
+        
+        // Random buildings
+        for (let i = 0; i < 10; i++) {
+            const x = Math.random() * 80 - 40;
+            const z = Math.random() * 80 - 40;
+            const width = 5 + Math.random() * 8;
+            const depth = 5 + Math.random() * 8;
+            const height = 2 + Math.random() * 6;
+            const color = 0xaaaaaa + Math.floor(Math.random() * 0x555555);
+            createBuilding(x, z, width, depth, height, color);
+        }
+
+        // Create clues
+        createClue(-12, -12, 'fingerprint');
+        createClue(18, 8, 'medical_record');
+        createClue(0, 0, 'witness_photo');
+
+        // Add roads
+        function createRoad() {
+            const roadGeometry = new THREE.PlaneGeometry(100, 5);
+            const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const road1 = new THREE.Mesh(roadGeometry, roadMaterial);
+            road1.rotation.x = -Math.PI / 2;
+            road1.position.y = 0.01;
+            scene.add(road1);
+            
+            const road2 = new THREE.Mesh(roadGeometry, roadMaterial);
+            road2.rotation.x = -Math.PI / 2;
+            road2.rotation.z = Math.PI / 2;
+            road2.position.y = 0.01;
+            scene.add(road2);
+        }
+        createRoad();
+
+        // Pointer lock controls activation
+        document.addEventListener('click', () => {
+            if (!controls.isLocked) {
+                controls.lock();
+            }
+        });
+
+        // Movement variables
+        const moveSpeed = 0.1;
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false
+        };
+
+        // Keyboard event listeners
+        document.addEventListener('keydown', (e) => {
+            switch (e.key.toLowerCase()) {
+                case 'w': keys.w = true; break;
+                case 'a': keys.a = true; break;
+                case 's': keys.s = true; break;
+                case 'd': keys.d = true; break;
+                case 'e': checkInteraction(); break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            switch (e.key.toLowerCase()) {
+                case 'w': keys.w = false; break;
+                case 'a': keys.a = false; break;
+                case 's': keys.s = false; break;
+                case 'd': keys.d = false; break;
+            }
+        });
+
+        // Handle movement
+        function handleMovement() {
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0;
+            direction.normalize();
+
+            const sideDirection = new THREE.Vector3();
+            sideDirection.crossVectors(new THREE.Vector3(0, 1, 0), direction);
+
+            if (keys.w) {
+                player.position.addScaledVector(direction, moveSpeed);
+            }
+            if (keys.s) {
+                player.position.addScaledVector(direction, -moveSpeed);
+            }
+            if (keys.a) {
+                player.position.addScaledVector(sideDirection, -moveSpeed);
+            }
+            if (keys.d) {
+                player.position.addScaledVector(sideDirection, moveSpeed);
+            }
+
+            // Keep player on the ground
+            player.position.y = 1;
+
+            // Update detection level based on proximity to police station
+            const policeStation = interactableObjects.find(obj => obj.userData.type === 'police');
+            if (policeStation) {
+                const distance = player.position.distanceTo(policeStation.position);
+                detectionLevel = Math.max(0, 1 - (distance / 20));
+                document.getElementById('detection').textContent = 
+                    `Detection: ${detectionLevel > 0.7 ? 'High' : detectionLevel > 0.3 ? 'Medium' : 'Low'}`;
+            }
+        }
+
+        // Check for interactions
+        function checkInteraction() {
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects([...interactableObjects, ...clueObjects]);
+            
+            if (intersects.length > 0 && intersects[0].distance < 5) {
+                const obj = intersects[0].object;
+                
+                if (obj.userData.type === 'clue') {
+                    // Collect clue
+                    cluesFound++;
+                    document.getElementById('clues').textContent = `Clues Found: ${cluesFound}`;
+                    scene.remove(obj);
+                    clueObjects = clueObjects.filter(item => item !== obj);
+                    
+                    // Show message based on clue type
+                    let message = "You found a clue!";
+                    switch(obj.userData.clueType) {
+                        case 'fingerprint': message = "Fingerprint evidence collected"; break;
+                        case 'medical_record': message = "Medical records obtained"; break;
+                        case 'witness_photo': message = "Photo of a witness found"; break;
+                    }
+                    alert(message);
+                } else if (obj.userData.type === 'police') {
+                    alert("Police Station: Be careful not to draw attention to yourself!");
+                } else if (obj.userData.type === 'hospital') {
+                    alert("Hospital: This is where the identity switch happened. Look for clues.");
+                }
+            }
+        }
+
+        // Game loop
+        function animate() {
+            requestAnimationFrame(animate);
+            handleMovement();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start game instructions
+        setTimeout(() => {
+            alert("Welcome to 'A Man: Identity Chase'\n\nYou wake up with no memory of who you are. Explore the city to find clues about your identity.\n\nBe careful around the police station - they might be looking for you!");
+        }, 1000);
+    </script>
+</body>
+</html>
